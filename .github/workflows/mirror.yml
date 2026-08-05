@@ -1,0 +1,45 @@
+name: Mirror eugr Recipes
+
+on:
+  schedule:
+    - cron: "15 * * * *"   # Hourly at :15 — polls upstream for recipe/mod/shim changes
+  workflow_dispatch:        # Manual trigger
+
+concurrency:
+  group: mirror
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
+      - name: Sync mirrored content from upstream
+        id: sync
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/sync-mirror.sh
+
+      - name: Commit and push
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          EUGR_COMMIT: ${{ steps.sync.outputs.eugr_commit }}
+          SPARKRUN_COMMIT: ${{ steps.sync.outputs.sparkrun_commit }}
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          git add -A recipes mods run-recipe.sh licenses upstream-state.json
+          git commit -m "Mirror eugr recipes/mods @ ${EUGR_COMMIT:0:7} + run-recipe.sh @ ${SPARKRUN_COMMIT:0:7}"
+
+          # Rebase onto anything that landed while we were syncing (a human
+          # commit to this repo's own files — README, workflow, manifest) and
+          # push. The mirrored paths are wholly derived from upstream, so the
+          # only meaningful conflict source is outside them.
+          git pull --rebase origin main
+          git push

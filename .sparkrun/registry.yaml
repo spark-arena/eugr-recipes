@@ -1,0 +1,6 @@
+registries:
+  - name: eugr
+    description: Official mirror of eugr/spark-vllm-docker recipes and mods
+    recipes: recipes
+    mods: mods
+    visible: true
