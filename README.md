@@ -21,14 +21,21 @@ overwrite local edits on its next sync.
 
 ## Contents
 
-| Path                     | Source                                              |
-|--------------------------|-----------------------------------------------------|
-| `recipes/`               | `eugr/spark-vllm-docker` → `recipes/` (verbatim)     |
-| `mods/`                  | `eugr/spark-vllm-docker` → `mods/` (verbatim)        |
-| `run-recipe.sh`          | `spark-arena/sparkrun` (`main`) → `run-recipe.sh`    |
-| `licenses/`              | Upstream license texts, synced alongside the content |
-| `.sparkrun/registry.yaml`| Ours — the registry manifest                          |
-| `upstream-state.json`    | Provenance: the commits each sync mirrored from       |
+| Path                     | Source                                                       |
+|--------------------------|--------------------------------------------------------------|
+| `recipes/`               | `eugr/spark-vllm-docker` → `recipes/` (verbatim)              |
+| `recipes/README.md`      | **Ours** — sparkrun-oriented usage; replaces upstream's        |
+| `mods/`                  | `eugr/spark-vllm-docker` → `mods/` (verbatim)                 |
+| `run-recipe.sh`          | `spark-arena/sparkrun` (`main`) → `run-recipe.sh`             |
+| `licenses/`              | Upstream license texts, synced alongside the content          |
+| `.sparkrun/registry.yaml`| Ours — the registry manifest                                   |
+| `upstream-state.json`    | Provenance: the commits each sync mirrored from                |
+
+[`recipes/README.md`](recipes/README.md) is the one mirrored-path exception (an anchored
+`rsync --exclude`). Upstream's version documents `--discover`, `--setup`, `--apply-mod`,
+`--earlyoom` and the `build-and-copy.sh` / `launch-cluster.sh` pipeline — none of which exist
+under sparkrun, and most of which the shim hard-errors on — so it would be actively
+misleading here. Ours covers the same ground for sparkrun users.
 
 `run-recipe.sh` is sparkrun's `spark-vllm-docker` compatibility shim: it accepts the
 legacy `run-recipe.py`/`run-recipe.sh` CLI surface and performs the work through
@@ -44,7 +51,13 @@ cd eugr-recipes
 The shim resolves `sparkrun` from `.venv/bin/sparkrun`, then `PATH`, then `uv tool run
 sparkrun` — so it works in this checkout without installing anything first. Run
 `sparkrun run --help` for the full native option set; the shim's header documents where
-it intentionally deviates from the legacy tool.
+it intentionally deviates from the legacy tool, and
+[`recipes/README.md`](recipes/README.md) has the flag-by-flag mapping.
+
+Note the recipe is named, not pathed. A bare name resolves through the `eugr` **registry**,
+which is what makes each recipe's `mods:` entries resolvable; `sparkrun run
+recipes/<name>.yaml` from a clone does not (see
+[Reference recipes by name](recipes/README.md#reference-recipes-by-name-not-by-file-path)).
 
 ## Using it as a registry
 
@@ -72,7 +85,8 @@ path-qualified (`@eugr/3x-spark-cluster/<name>`) when a name is ambiguous.
 `workflow_dispatch`). The script:
 
 1. Blobless sparse-clones `eugr/spark-vllm-docker@main` and `rsync -a --delete`s
-   `recipes/` and `mods/` into place — so upstream deletions propagate.
+   `recipes/` and `mods/` into place — so upstream deletions propagate — excluding
+   `recipes/README.md`, which is ours.
 2. Resolves `spark-arena/sparkrun@main` to a commit sha, then fetches `run-recipe.sh`
    **pinned to that sha** (the branch-named raw URL is CDN-cached and can serve content
    from a different commit than the sha being recorded), and sanity-checks the shebang
