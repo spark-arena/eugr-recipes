@@ -104,5 +104,5 @@ sync tooling and the registry manifest.
 
 - `recipes/`, `mods/` — MIT, © Eugene Rakhmatulin
   ([`licenses/eugr-spark-vllm-docker-MIT.txt`](licenses/eugr-spark-vllm-docker-MIT.txt))
-- `run-recipe.sh` — Apache-2.0, from sparkrun
+- `run-recipe.sh` — Apache-2.0, from sparkrun; (C) Scitrera LLC, Spark Arena Team
   ([`licenses/sparkrun-Apache-2.0.txt`](licenses/sparkrun-Apache-2.0.txt))
