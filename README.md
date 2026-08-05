@@ -5,15 +5,7 @@ Automated **mirror** of the recipes and mods from
 [sparkrun](https://github.com/spark-arena/sparkrun) recipe registry.
 
 This repo is the **official mirror for eugr's recipes** — it is the `eugr` registry that
-sparkrun resolves `@eugr/<recipe>` against. Mirroring (rather than pointing sparkrun
-directly at the upstream repo) means:
-
-- sparkrun clones a ~2 MB registry instead of sparse-checking-out a repo whose primary
-  content is a multi-megabyte container build,
-- the registry layout (`.sparkrun/registry.yaml`) is ours to declare without asking
-  upstream to carry sparkrun metadata,
-- every sync is a commit here, so the registry has a reviewable history and a pinnable
-  state independent of upstream's.
+sparkrun resolves `@eugr/<recipe>` against. 
 
 **Nothing in `recipes/` or `mods/` is authored here.** Fixes belong upstream in
 [eugr/spark-vllm-docker](https://github.com/eugr/spark-vllm-docker); this mirror will
