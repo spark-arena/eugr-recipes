@@ -71,7 +71,17 @@ for d in recipes mods; do
         exit 1
     fi
     mkdir -p "$d"
-    rsync -a --delete "$tmp/eugr/$d/" "$d/"
+
+    # `recipes/README.md` is OURS, not mirrored: upstream's documents --discover /
+    # --setup / --apply-mod and the build-and-copy.sh + launch-cluster.sh pipeline,
+    # none of which exist under sparkrun. The exclude is anchored (`/README.md`) so
+    # a nested one — recipes/3x-spark-cluster/README.md, say — still mirrors, and
+    # rsync leaves excluded files on the receiving side alone despite --delete.
+    # `mods/` has no such override, so an upstream mods/README.md would mirror.
+    excludes=()
+    [ "$d" = "recipes" ] && excludes=(--exclude=/README.md)
+
+    rsync -a --delete "${excludes[@]+"${excludes[@]}"}" "$tmp/eugr/$d/" "$d/"
 done
 
 mkdir -p licenses

@@ -1,332 +1,128 @@
-# Recipes
+# Recipes (mirrored)
 
-Recipes provide a **one-click solution** for deploying models with pre-configured settings. Each recipe is a YAML file that specifies:
+Every `.yaml` in this directory is mirrored verbatim from
+[eugr/spark-vllm-docker](https://github.com/eugr/spark-vllm-docker)`/recipes/` and is
+served to [sparkrun](https://github.com/spark-arena/sparkrun) as the **`eugr` registry**.
 
-- HuggingFace model to download
-- Container image and build arguments
-- Required mods/patches
-- Default parameters (port, host, tensor parallelism, etc.)
-- Environment variables
-- The vLLM serve command
+**Don't edit recipes here** — the next sync overwrites them. Recipe fixes belong upstream.
+This README is the one file in this directory that is *ours*: upstream's version documents
+`--discover`, `--setup`, `--apply-mod`, `--earlyoom` and the `build-and-copy.sh` /
+`launch-cluster.sh` pipeline, none of which exist under sparkrun. It is excluded from the
+sync; see [`scripts/sync-mirror.sh`](../scripts/sync-mirror.sh).
 
-## Quick Start
+## Quick start
 
 ```bash
-# List available recipes
+sparkrun list @eugr                              # every recipe in this registry
+sparkrun show @eugr/glm-4.7-flash-awq             # resolved plan + VRAM estimate
+sparkrun run  @eugr/glm-4.7-flash-awq             # launch
+sparkrun run  @eugr/qwen3.6-35b-a3b-fp8 --tp 2    # 2-way TP = 2 hosts on DGX Spark
+
+sparkrun logs @eugr/qwen3.6-35b-a3b-fp8           # re-attach (Ctrl+C detaches, doesn't stop)
+sparkrun stop @eugr/qwen3.6-35b-a3b-fp8
+sparkrun status
+```
+
+Nothing needs to be cloned or built first — sparkrun syncs the model and the image to your
+hosts as part of `run`. The `@eugr/` scope is only needed to disambiguate; a bare
+`glm-4.7-flash-awq` resolves here too.
+
+### Reference recipes by name, not by file path
+
+```bash
+sparkrun run @eugr/inkling-small-nvfp4          # ✅
+sparkrun run recipes/inkling-small-nvfp4.yaml   # ❌ mods won't resolve
+```
+
+Mod resolution looks for a recipe's `mods:` entries *adjacent to the recipe file* (`recipes/`
+and `recipes/mods/`) and then in the recipe's **source registry**. It never looks at this
+repo's top-level `mods/` by filesystem proximity — that directory is reachable because the
+registry manifest declares `mods: mods`. So a recipe launched by path from a clone of this
+repo fails with `Could not resolve mod 'mods/…'`, while the same recipe launched by name
+resolves it. Use the name.
+
+## Legacy CLI: `run-recipe.sh`
+
+[`../run-recipe.sh`](../run-recipe.sh) is sparkrun's `spark-vllm-docker` compatibility shim
+— upstream's command line, sparkrun underneath:
+
+```bash
+./run-recipe.sh glm-4.7-flash-awq --solo
+./run-recipe.sh qwen3.6-35b-a3b-fp8 -n 192.168.1.10,192.168.1.11
 ./run-recipe.sh --list
-
-# Run a recipe in solo mode (single node)
-./run-recipe.sh glm-4.7-flash-awq --solo
-
-# Full setup: build container + download model + run
-./run-recipe.sh glm-4.7-flash-awq --solo --setup
-
-# Run with overrides
-./run-recipe.sh glm-4.7-flash-awq --solo --port 9000 --gpu-mem 0.8
-
-# Cluster deployment
-./run-recipe.sh glm-4.7-nvfp4 -n 192.168.1.10,192.168.1.11 --setup
 ```
 
-## Cluster Node Discovery
+It resolves `sparkrun` from `.venv/bin/sparkrun`, then `PATH`, then `uv tool run sparkrun`,
+so it works without installing anything first. Foreground is the default; `-d`/`--daemon`
+detaches.
 
-The recipe runner can automatically discover cluster nodes:
+| Upstream flag | Under the shim |
+|---|---|
+| `--port`, `--host`, `--tp`, `--gpu-mem`, `--max-model-len` | mapped to the native equivalent |
+| `-n/--nodes`, `-t/--container`, `--name`, `--master-port`/`--head-port` | mapped |
+| `-e/--env`, `--nccl-debug`, `-v/--volume`, `-p/--publish` (solo only) | mapped via `--executor-args` |
+| `--non-privileged`, `--mem-limit-gb`, `--mem-swap-limit-gb`, `--shm-size-gb`, `--pids-limit` | mapped |
+| `--solo`, `--ray`, `--no-ray`, `-d/--daemon`, `--dry-run`, `-l/--list` | mapped |
+| `--config <.env>` | imported as a sparkrun cluster, and the run is retargeted at it |
+| `--setup` | **no-op** — images and models sync automatically during `run` |
+| `--discover`, `--show-env` | **error** → `sparkrun setup wizard` / `sparkrun cluster show` |
+| `--build-only`, `--download-only`, `--force-build`, `--force-download`, `-j` | **error** — no isolated build/download phase |
+| `--apply-mod`, `--eth-if`, `--ib-if`, `--keep-entrypoint`, `--no-cache-dirs`, `--earlyoom` | **error** — see the shim's header for why |
+
+Two behavioral differences worth knowing: `--list` lists sparkrun *registry* recipes rather
+than a local directory, and engine passthrough after `--` becomes `-o key=value` rather than
+being appended verbatim, so it only takes effect for recipe-templated or known engine keys.
+`sparkrun run --help` is the full native surface.
+
+## How sparkrun reads these recipes
+
+They are **v1** (`recipe_version: "1"`) recipes; sparkrun runs them natively rather than
+converting them.
+
+| In the recipe | What sparkrun does |
+|---|---|
+| `recipe_version: "1"` | routes to the **`eugr` builder** (unless the recipe names a builder) |
+| `command:` containing `--distributed-executor-backend ray` | runtime `vllm-ray`; otherwise `vllm-distributed` |
+| `container: vllm-node` | **pull-first**: reused if already present, else substituted with `ghcr.io/spark-arena/dgx-vllm-eugr-nightly:latest` and pulled. Nothing is built unless `build_args` requests it |
+| `mods:` | each mod is `docker cp`'d in and its `run.sh` executed as a `pre_exec` hook (2 hook entries per mod) |
+| `build_args:` | forwarded verbatim to upstream's `build-and-copy.sh` **only on the build path** — triggered by `--use-wheels` or a custom build flag (`--vllm-ref`, `--exp-mxfp4`, …). `--exp-b12x` selects the b12x nightly *without* forcing a build |
+| `cluster_only: true` | `min_nodes: 2` |
+| `solo_only: true` | `max_nodes: 1` |
+| `defaults:` | the config chain — **CLI → recipe defaults → runtime defaults**. Override anything with `-o key=value` |
+| `{placeholder}` in `command:` | substituted from that chain; `{{`/`}}` escape literal braces for JSON-valued flags |
+
+So `--setup`, `--build-only` and `--force-build` have no counterpart by design: there is no
+separate build/download phase to run, and the image is normally pulled rather than built.
+`sparkrun run --rebuild` is the closest equivalent — it forces a fresh pull (or a
+from-scratch rebuild on the build path).
+
+### Mods run without prompting here
+
+Mods are `pre_exec` hooks, i.e. code execution, so sparkrun gates them on **per-registry
+trust** — a local decision in your `~/.config/sparkrun/registries.yaml`; a registry manifest
+cannot grant itself trust. `eugr` ships as a trusted sparkrun default, so mods just run. If
+you added this registry by hand, opt in with `sparkrun registry trust eugr` (or
+`sparkrun registry add --trust <url>`), or pass `sparkrun run --trust` per launch.
+
+### Cluster-size variants
+
+`3x-spark-cluster/` and `4x-spark-cluster/` hold node-count variants. The registry scan is
+recursive and a flat `recipes/<name>.yaml` wins over a nested one *within* this registry, so
+reach a nested variant explicitly when a stem exists in both:
 
 ```bash
-# Auto-discover nodes and save to .env
-./run-recipe.sh --discover
-
-# Show current .env configuration
-./run-recipe.sh --show-env
-
-# Run recipe (uses nodes from .env automatically)
-./run-recipe.sh glm-4.7-nvfp4 --setup
+sparkrun run @eugr/3x-spark-cluster/qwen3.5-397b-int4-autoround
 ```
 
-When you run `--discover`, it:
-1. Detects active CX7 interfaces and determines mesh vs. standard topology.
-2. Scans the network for peers that are both SSH-reachable **and** have an NVIDIA GB10 GPU.
-3. In mesh mode, separately discovers `COPY_HOSTS` on the direct IB-attached interfaces.
-4. Prompts for per-node confirmation for `CLUSTER_NODES` and `COPY_HOSTS`.
-5. Saves the full configuration (including mesh NCCL settings if applicable) to `.env`.
+Any name matching more than one recipe raises an error listing the path-qualified names
+rather than guessing (or offers a numbered prompt on a TTY).
 
-Future recipe runs will automatically use nodes from `.env` unless you specify `-n` or `--solo`.
+## Writing your own
 
-When distributing the container image or model files, the runner uses `COPY_HOSTS` from `.env` (which may differ from `CLUSTER_NODES` in mesh mode) to ensure transfers go over the fastest available path.
+Not here — this directory is overwritten on every sync. Contribute eugr recipes
+[upstream](https://github.com/eugr/spark-vllm-docker); for your own, use a directory in your
+working tree or your own registry, and prefer the v2 format:
 
-## Workflow Modes
-
-### Solo Mode (Single Node)
-```bash
-# Explicitly run in solo mode
-./run-recipe.sh glm-4.7-flash-awq --solo
-
-# If no nodes configured, defaults to solo
-./run-recipe.sh minimax-m2-awq
-```
-
-### Cluster Mode (Multiple Nodes)
-```bash
-# Specify nodes directly (first IP is head node)
-./run-recipe.sh glm-4.7-nvfp4 -n 192.168.1.10,192.168.1.11 --setup
-
-# Or use auto-discovered nodes from .env
-./run-recipe.sh --discover  # First time only
-./run-recipe.sh glm-4.7-nvfp4 --setup
-```
-
-When using cluster mode with `--setup`:
-- Container is built locally and copied to all worker nodes
-- Model is downloaded locally and copied to all worker nodes
-
-### Cluster-Only Recipes
-
-Some models are too large to run on a single node. These recipes have `cluster_only: true` and will fail with a helpful error if you try to run them in solo mode:
-
-```bash
-$ ./run-recipe.sh glm-4.7-nvfp4 --solo
-Error: Recipe 'GLM-4.7-NVFP4' requires cluster mode.
-This model is too large to run on a single node.
-
-Options:
-  1. Specify nodes directly:  ./run-recipe.sh glm-4.7-nvfp4 -n node1,node2
-  2. Auto-discover and save:  ./run-recipe.sh --discover
-     Then run:                ./run-recipe.sh glm-4.7-nvfp4
-```
-
-## Setup Options
-
-| Flag | Description |
-|------|-------------|
-| `--setup` | Full setup: build (if missing) + download (if missing) + run |
-| `--build-only` | Only build/copy the container, don't run |
-| `--download-only` | Only download/copy the model, don't run |
-| `--force-build` | Rebuild even if container exists |
-| `--force-download` | Re-download even if model exists |
-| `--dry-run` | Show what would happen without executing |
-
-## Recipe Format
-
-```yaml
-# Required fields
-name: Human-readable name
-container: docker-image-name
-command: |
-  vllm serve model/name \
-      --port {port} \
-      --host {host}
-
-# Optional fields
-description: What this recipe does
-model: org/model-name              # HuggingFace model ID for --setup downloads
-cluster_only: false                # Set to true if model requires cluster mode
-build_args:                        # Extra args for build-and-copy.sh
-  - --exp-mxfp4                    # e.g., for MXFP4 Dockerfile
-mods:
-  - mods/some-patch
-defaults:
-  port: 8000
-  host: 0.0.0.0
-  tensor_parallel: 2
-  gpu_memory_utilization: 0.85
-  max_model_len: 32000
-env:
-  SOME_VAR: "value"
-```
-
-### Build Arguments
-
-The `build_args` field passes flags to `build-and-copy.sh`:
-
-| Flag | Description |
-|------|-------------|
-| `--exp-mxfp4` | Use MXFP4 Dockerfile (for MXFP4 quantized models) |
-| `--use-wheels` | Build the runner image from prebuilt or local wheels instead of pulling `eugr/spark-vllm:latest` |
-
-### Parameter Substitution
-
-Use `{param_name}` in the command to substitute values from defaults or CLI overrides:
-
-```yaml
-defaults:
-  port: 8000
-  tensor_parallel: 2
-
-command: |
-  vllm serve my/model \
-      --port {port} \
-      -tp {tensor_parallel}
-```
-
-Override at runtime:
-```bash
-./run-recipe.sh my-recipe --port 9000 --tp 4
-```
-
-## CLI Reference
-
-```
-Usage: ./run-recipe.sh [OPTIONS] [RECIPE]
-
-Cluster discovery:
-  --discover                  Auto-detect cluster nodes and save to .env
-  --show-env                  Show current .env configuration
-  --config FILE               Path to .env configuration file (default: .env in repo directory)
-
-Recipe overrides:
-  --port PORT                 Override port
-  --host HOST                 Override host
-  --tensor-parallel, --tp N   Override tensor parallelism
-  --gpu-memory-utilization N  Override GPU memory utilization (--gpu-mem)
-  --max-model-len N           Override max model length
-
-Setup options:
-  --setup                     Full setup: build + download + run
-  --build-only                Only build/copy container, don't run
-  --download-only             Only download/copy model, don't run
-  --force-build               Rebuild even if container exists
-  --force-download            Re-download even if model exists
-
-Launch options:
-  --solo                      Run in solo mode (single node, no Ray)
-  --ray                       Opt into Ray for multi-node vLLM
-  --no-ray                    Default multi-node no-Ray mode (accepted for compatibility)
-  -n, --nodes IPS             Comma-separated node IPs (first = head)
-  -d, --daemon                Run in daemon mode
-  -t, --container IMAGE       Override container from recipe
-  --name NAME                 Override container name
-  --nccl-debug LEVEL          NCCL debug level (VERSION, WARN, INFO, TRACE)
-  --apply-mod PATH            Apply an extra mod directory or zip (repeatable)
-  -p, --publish HOST:CONTAINER
-                              Publish a container port in solo mode (repeatable)
-  -v, --volume LOCAL:CONTAINER
-                              Map a volume using Docker syntax (repeatable)
-  --master-port PORT          Cluster coordination port: Ray head port or PyTorch
-                              distributed master port (default: 29501).
-                              Alias: --head-port
-  --eth-if IFACE              Override Ethernet interface
-  --ib-if IFACE               Override InfiniBand interface
-  -e VAR=VALUE                Pass environment variable to container (repeatable)
-  -j N                        Number of parallel build jobs
-  --no-cache-dirs             Do not mount ~/.cache/vllm, ~/.cache/flashinfer, ~/.triton
-  --keep-entrypoint           Keep the Docker image entrypoint
-  --earlyoom                  Run earlyoom as the container foreground process
-  --earlyoom-args ARGS        Arguments passed to earlyoom
-  --non-privileged            Run container without --privileged
-  --mem-limit-gb N            Memory limit in GB (only with --non-privileged)
-  --mem-swap-limit-gb N       Memory+swap limit in GB (only with --non-privileged)
-  --pids-limit N              Process limit (only with --non-privileged)
-  --shm-size-gb N             Shared memory size in GB (only with --non-privileged)
-
-Extra vLLM arguments:
-  -- ARGS...                  Pass additional arguments directly to vLLM
-
-Other:
-  --dry-run                   Show what would be executed
-  --list, -l                  List available recipes
-```
-
-`--earlyoom` uses the same optional monitor as `launch-cluster.sh`. The default arguments are `-M 524288,102400 -s 100 -r 60`; override them with `--earlyoom-args "..."` or `VLLM_SPARK_EARLYOOM_ARGS`. `-M` values are KiB, so the default sends SIGTERM below 512 MiB available memory and SIGKILL below 100 MiB. For example:
-
-```bash
-./run-recipe.sh minimax-m2-awq --solo \
-  --earlyoom --earlyoom-args "-M 786432,196608 -s 100 -r 120"
-```
-
-## Extra vLLM Arguments
-
-Use the Unix-style `--` separator to pass additional arguments directly to vLLM. Any arguments after `--` are appended verbatim to the vLLM command.
-
-```bash
-# Override load format
-./run-recipe.sh my-recipe --solo -- --load-format safetensors
-
-# Set a custom served model name
-./run-recipe.sh my-recipe --solo -- --served-model-name my-api-name
-
-# Configure CUDA graph mode
-./run-recipe.sh my-recipe --solo -- -cc.cudagraph_mode=PIECEWISE
-
-# Multiple extra arguments
-./run-recipe.sh my-recipe --solo -- --load-format auto --enforce-eager --seed 42
-```
-
-These arguments are appended to the end of the generated vLLM command after all template substitutions.
-
-**Duplicate Detection**: If you pass an argument that conflicts with a CLI override (e.g., `--port` when you also used `--port`), a warning will be shown since your CLI override value may be replaced by the extra arg.
-
-## Creating a Recipe
-
-1. Create a new `.yaml` file in `recipes/`
-2. Specify required fields: `name`, `container`, `command`
-3. Add `build_args` if your model needs special build options
-4. Add `mods` if your model needs patches
-5. Set `cluster_only: true` if model is too large for single node
-6. Set sensible `defaults`
-7. Add `env` variables if needed
-
-Example:
-```yaml
-name: My Model
-description: My custom model setup
-container: vllm-node
-
-# New recipes should use the default vllm-node image and omit legacy TF5 build args.
-
-mods:
-  - mods/my-fix
-
-defaults:
-  port: 8000
-  host: 0.0.0.0
-  tensor_parallel: 1
-  gpu_memory_utilization: 0.85
-
-command: |
-  vllm serve org/my-model \
-      --port {port} \
-      --host {host} \
-      -tp {tensor_parallel} \
-      --gpu-memory-utilization {gpu_memory_utilization}
-```
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│  autodiscover.sh                                        │
-│  - Interface detection (standard / mesh topology)       │
-│  - GB10 peer verification via SSH                       │
-│  - CLUSTER_NODES and COPY_HOSTS discovery               │
-│  - Interactive .env save with per-node confirmation     │
-└──────────────────────────┬──────────────────────────────┘
-                           │ sourced by
-                           ▼
-┌─────────────────────────────────────────────────────────┐
-│  run-recipe.sh / run-recipe.py                          │
-│  - Parses YAML recipe                                   │
-│  - Loads / triggers cluster discovery (--discover)      │
-│  - Handles --setup (build + download + run)             │
-│  - Generates launch script from template                │
-│  - Applies CLI overrides                                │
-└──────────┬────────────────────────┬─────────────────────┘
-           │ calls (for build)      │ calls (for download)
-           ▼                        ▼
-┌──────────────────────┐  ┌───────────────────────────────┐
-│  build-and-copy.sh   │  │  hf-download.sh               │
-│  - Docker build      │  │  - HuggingFace model download │
-│  - Copy to COPY_HOSTS│  │  - Rsync to COPY_HOSTS        │
-└──────────────────────┘  └───────────────────────────────┘
-           │
-           │ then calls (for run)
-           ▼
-┌─────────────────────────────────────────────────────────┐
-│  launch-cluster.sh                                      │
-│  - Cluster orchestration                                │
-│  - Container lifecycle (trimmed to required node count) │
-│  - Mod application                                      │
-│  - Launch script execution                              │
-└─────────────────────────────────────────────────────────┘
-```
-
-This separation follows the Unix philosophy: `run-recipe.sh` provides convenience, while the underlying scripts remain focused on their specific tasks.
+- [Recipe format reference](https://sparkrun.dev/recipes/format/) ([`RECIPES.md`](https://github.com/spark-arena/sparkrun/blob/main/RECIPES.md))
+- [Writing recipes](https://sparkrun.dev/recipes/writing-recipes/)
+- [Registries](https://sparkrun.dev/recipes/registries/) · [Builders](https://sparkrun.dev/developer-reference/builders/) · [`sparkrun run`](https://sparkrun.dev/cli/run/)
