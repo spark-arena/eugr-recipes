@@ -1,14 +1,4 @@
-# Recipes (mirrored)
-
-Every `.yaml` in this directory is mirrored verbatim from
-[eugr/spark-vllm-docker](https://github.com/eugr/spark-vllm-docker)`/recipes/` and is
-served to [sparkrun](https://github.com/spark-arena/sparkrun) as the **`eugr` registry**.
-
-**Don't edit recipes here** — the next sync overwrites them. Recipe fixes belong upstream.
-This README is the one file in this directory that is *ours*: upstream's version documents
-`--discover`, `--setup`, `--apply-mod`, `--earlyoom` and the `build-and-copy.sh` /
-`launch-cluster.sh` pipeline, none of which exist under sparkrun. It is excluded from the
-sync; see [`scripts/sync-mirror.sh`](../scripts/sync-mirror.sh).
+# Recipes
 
 ## Quick start
 
@@ -26,20 +16,6 @@ sparkrun status
 Nothing needs to be cloned or built first — sparkrun syncs the model and the image to your
 hosts as part of `run`. The `@eugr/` scope is only needed to disambiguate; a bare
 `glm-4.7-flash-awq` resolves here too.
-
-### Reference recipes by name, not by file path
-
-```bash
-sparkrun run @eugr/inkling-small-nvfp4          # ✅
-sparkrun run recipes/inkling-small-nvfp4.yaml   # ❌ mods won't resolve
-```
-
-Mod resolution looks for a recipe's `mods:` entries *adjacent to the recipe file* (`recipes/`
-and `recipes/mods/`) and then in the recipe's **source registry**. It never looks at this
-repo's top-level `mods/` by filesystem proximity — that directory is reachable because the
-registry manifest declares `mods: mods`. So a recipe launched by path from a clone of this
-repo fails with `Could not resolve mod 'mods/…'`, while the same recipe launched by name
-resolves it. Use the name.
 
 ## Legacy CLI: `run-recipe.sh`
 
@@ -119,10 +95,16 @@ rather than guessing (or offers a numbered prompt on a TTY).
 
 ## Writing your own
 
-Not here — this directory is overwritten on every sync. Contribute eugr recipes
-[upstream](https://github.com/eugr/spark-vllm-docker); for your own, use a directory in your
-working tree or your own registry, and prefer the v2 format:
+You can save your recipes to local yaml files, create a git repo and share them,
+or you can submit a PR to the [community registry](https://github.com/spark-arena/community-recipe-registry) and share them
+that way. You can also publish benchmarks to [Spark Arena](https://spark-arena.com).
+
+The recipes in this repo are in the v1 (original) recipe format. New recipes should use v2 format if possible.
+
+References:
 
 - [Recipe format reference](https://sparkrun.dev/recipes/format/) ([`RECIPES.md`](https://github.com/spark-arena/sparkrun/blob/main/RECIPES.md))
 - [Writing recipes](https://sparkrun.dev/recipes/writing-recipes/)
-- [Registries](https://sparkrun.dev/recipes/registries/) · [Builders](https://sparkrun.dev/developer-reference/builders/) · [`sparkrun run`](https://sparkrun.dev/cli/run/)
+- [Registries](https://sparkrun.dev/recipes/registries/) 
+- [Builders](https://sparkrun.dev/developer-reference/builders/) 
+- [`sparkrun run`](https://sparkrun.dev/cli/run/)

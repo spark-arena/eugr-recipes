@@ -54,10 +54,13 @@ sparkrun` — so it works in this checkout without installing anything first. Ru
 it intentionally deviates from the legacy tool, and
 [`recipes/README.md`](recipes/README.md) has the flag-by-flag mapping.
 
-Note the recipe is named, not pathed. A bare name resolves through the `eugr` **registry**,
-which is what makes each recipe's `mods:` entries resolvable; `sparkrun run
-recipes/<name>.yaml` from a clone does not (see
-[Reference recipes by name](recipes/README.md#reference-recipes-by-name-not-by-file-path)).
+Note the recipe is **named, not pathed** — that matters even from inside this checkout. A
+bare name resolves through the `eugr` registry, which is what makes each recipe's `mods:`
+entries resolvable. `sparkrun run recipes/<name>.yaml` does not: mod lookup searches next to
+the recipe file (`recipes/`, `recipes/mods/`) and then the recipe's source registry, never
+this repo's top-level `mods/` by filesystem proximity — that directory is reachable only
+because [`.sparkrun/registry.yaml`](.sparkrun/registry.yaml) declares `mods: mods`. Launched
+by path, a recipe with mods fails with `Could not resolve mod 'mods/…'`.
 
 ## Using it as a registry
 

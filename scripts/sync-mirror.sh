@@ -37,8 +37,10 @@ SPARKRUN_REF="${SPARKRUN_REF:-main}"
 
 # Paths this script owns. The change check is scoped to exactly these, so
 # unrelated dirty state in a local checkout can't masquerade as an upstream
-# change.
-TRACKED=(recipes mods run-recipe.sh licenses)
+# change. `recipes/README.md` is excluded to match the rsync exclude below —
+# it is ours, so editing it is not an upstream sync and must not restamp
+# upstream-state.json.
+TRACKED=(recipes mods run-recipe.sh licenses ':(exclude)recipes/README.md')
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
