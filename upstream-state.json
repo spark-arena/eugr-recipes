@@ -1,9 +1,9 @@
 {
   "eugr_repo": "https://github.com/eugr/spark-vllm-docker.git",
   "eugr_ref": "main",
-  "eugr_commit": "841fdcc4bde9f84c0abbed72c6df2d435401942e",
+  "eugr_commit": "e5174b8c56c96e2ec2b5d63a8022075d1c60bad3",
   "sparkrun_repo": "spark-arena/sparkrun",
   "sparkrun_ref": "main",
-  "sparkrun_commit": "7dfe8b2807238e97a614fc604a52453ed0e8ec44",
-  "synced_at": "2026-09-07T04:35:05Z"
+  "sparkrun_commit": "f0cab5c58f06d62bbb4f0df509c1b1f2dadc3cad",
+  "synced_at": "2026-09-09T00:11:43Z"
 }
